@@ -39,14 +39,16 @@ def generate(env) -> None:
     SCons.Tool.SourceFileScanner.add_scanner('.i90', fscan)
 
     if 'FORTRANFILESUFFIXES' not in env:
-        env['FORTRANFILESUFFIXES'] = ['.i']
+        env['FORTRANFILESUFFIXES'] = ['.i', '.f']
     else:
         env['FORTRANFILESUFFIXES'].append('.i')
+        env['FORTRANFILESUFFIXES'].append('.f')
 
     if 'F90FILESUFFIXES' not in env:
-        env['F90FILESUFFIXES'] = ['.i90']
+        env['F90FILESUFFIXES'] = ['.i90', '.f90']
     else:
         env['F90FILESUFFIXES'].append('.i90')
+        env['F90FILESUFFIXES'].append('.f90')
 
     add_all_to_env(env)
 
