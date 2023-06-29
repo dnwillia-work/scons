@@ -4,7 +4,7 @@
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
-# 'Software'), to deal in the Software without restriction, including
+# "Software"), to deal in the Software without restriction, including
 # without limitation the rights to use, copy, modify, merge, publish,
 # distribute, sublicense, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
@@ -13,7 +13,7 @@
 # The above copyright notice and this permission notice shall be included
 # in all copies or substantial portions of the Software.
 #
-# THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
 # KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
 # WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
@@ -21,7 +21,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-'''SCons.Tool.ifort
+"""SCons.Tool.ifort
 
 Tool-specific initialization for newer versions of the Intel Fortran Compiler
 for Linux/Windows (and possibly Mac OS X).
@@ -29,7 +29,7 @@ for Linux/Windows (and possibly Mac OS X).
 There normally shouldn't be any need to import this module directly.
 It will usually be imported through the generic SCons.Tool.Tool()
 selection method.
-'''
+"""
 
 __revision__ = 'src/engine/SCons/Tool/ifort.py issue-2856:2676:d23b7a2f45e8 2012/08/05 15:38:28 garyo'
 
@@ -40,7 +40,6 @@ import glob
 import re
 import SCons.Defaults
 import SCons.Util
-from SCons.Scanner.Fortran import FortranScan
 from SCons.Tool.FortranCommon import add_all_to_env
 
 is_windows = sys.platform == 'win32'
@@ -52,6 +51,7 @@ is_win64 = is_windows and (
     )
 )
 is_linux = sys.platform.startswith('linux')
+is_mac     = sys.platform == 'darwin'
 
 if is_windows:
     import SCons.Tool.msvc
@@ -182,7 +182,7 @@ def get_all_compiler_versions():
         keyName = 'Software\\WoW6432Node\\Intel\\Compilers\\1AFortran'
         versions.extend(extract_compiler_versions_from_registry(keyName))
         return sorted(versions, reverse=True)
-    elif is_linux:
+    elif is_mac or is_linux:
         for d in glob.glob('/opt/intel*/composer_xe_*'):
             # Typical dir here is /opt/intel/composer_xe_2011_sp1.11.344
             # The _sp1 is useless, the installers are named 2011.9.x, 2011.10.x, 2011.11.x
@@ -209,7 +209,7 @@ def get_intel_compiler_top(version, abi):
         if not SCons.Util.can_read_reg:
             raise NoRegistryModuleError('No Windows registry module was found')
         top = get_intel_registry_value('ProductDir', version)
-    elif is_linux:
+    elif is_mac or is_linux:
 
         def find_in_2011style_dir(version):
             # The 2011 (compiler v12) dirs are inconsistent, so just redo the search from
@@ -282,14 +282,16 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
                          '/opt/intel2015'
       verbose: (int)    if >0, prints compiler version used.
     '''
+    if not (is_mac or is_linux or is_windows):
+        # can't handle this platform
+        return
+        
     if is_windows:
         SCons.Tool.msvc.generate(env)
-
-    # ifort supports Fortran 90 and Fortran 95
-    # Additionally, ifort recognizes more file extensions.
-    fscan = FortranScan('FORTRANPATH')
-    SCons.Tool.SourceFileScanner.add_scanner('.i', fscan)
-    SCons.Tool.SourceFileScanner.add_scanner('.i90', fscan)
+    elif is_linux:
+        SCons.Tool.gcc.generate(env)
+    elif is_mac:
+        SCons.Tool.gcc.generate(env)
 
     vlist = get_all_compiler_versions()
     if not topdir and len(vlist) == 0:
@@ -314,7 +316,7 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
         print('Selected Intel Fortran compiler version: ' + version)
 
     if not abi:
-        if is_win64 or is_linux:
+        if is_mac or is_win64 or is_linux:
             abi = 'x86_64'
         else:
             abi = 'ia32'
@@ -373,7 +375,7 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
                 'Intel Fortran compiler: using version %s, abi %s, in '%s/%s''
                 % (repr(version), abi, topdir, bindir)
             )
-            if is_linux:
+            if is_mac or is_linux:
                 # Show the actual compiler version by running the compiler.
                 os.system('%s/%s/ifort --version' % (topdir, bindir))
 
@@ -390,7 +392,7 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
             env.AppendENVPath(
                 'PATH', os.path.join(topdir, 'redist', archdir, 'compiler')
             )
-        elif is_linux:
+        elif is_mac or is_linux:
             env.AppendENVPath('LD_LIBRARY_PATH', os.path.join(topdir, libdir))
             if binmkl:
                 env.AppendENVPath('LD_LIBRARY_PATH', os.path.join(topdir, libmkl))
@@ -400,28 +402,23 @@ def generate(env, version=None, abi=None, topdir=None, verbose=0):
     fc = 'ifort'
 
     for dialect in ['F77', 'F90', 'FORTRAN', 'F95']:
-        env['%s' % dialect] = fc
-        env['SH%s' % dialect] = '$%s' % dialect
+        env[f'{dialect}'] = fc
+        env[f'SH{dialect}'] = f'${dialect}'
         if env['PLATFORM'] == 'posix':
-            env['SH%sFLAGS' % dialect] = SCons.Util.CLVar('$%sFLAGS -fPIC' % dialect)
+            env[f'SH{dialect}FLAGS'] = SCons.Util.CLVar(f'${dialect}FLAGS -fPIC')
 
     if env['PLATFORM'] == 'win32':
         # On Windows, the ifort compiler specifies the object on the
         # command line with -object:, not -o.  Massage the necessary
         # command-line construction variables.
         for dialect in ['F77', 'F90', 'FORTRAN', 'F95']:
-            for var in [
-                '%sCOM' % dialect,
-                '%sPPCOM' % dialect,
-                'SH%sCOM' % dialect,
-                'SH%sPPCOM' % dialect,
-            ]:
+            for var in [f'{dialect}COM', f'{dialect}PPCOM',
+                        f'SH{dialect}COM', f'SH{dialect}PPCOM']:
                 env[var] = env[var].replace('-o $TARGET', '-object:$TARGET')
-        env['FORTRANMODDIRPREFIX'] = '/module:'
+        env['FORTRANMODDIRPREFIX'] = "/module:"
     else:
-        env['FORTRANMODDIRPREFIX'] = '-module '
+        env['FORTRANMODDIRPREFIX'] = "-module "
     env['FORTRANMODDIR'] = '${TARGET.dir}'
-    env['F90PATH'] = '${TARGET.dir}'
 
 
 def exists(env):
